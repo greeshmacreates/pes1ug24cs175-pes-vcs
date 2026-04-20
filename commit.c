@@ -24,6 +24,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <time.h>
 
 // Forward declarations (implemented in object.c)
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
@@ -180,22 +181,54 @@ int head_update(const ObjectID *new_commit) {
 }
 
 // ─── TODO: Implement these ───────────────────────────────────────────────────
+int commit_create(const char *message, ObjectID *out_id) {
+    ObjectID tree_id;
 
-// Create a new commit from the current staging area.
-//
-// HINTS - Useful functions to call:
-//   - tree_from_index   : writes the directory tree and gets the root hash
-//   - head_read         : gets the parent commit hash (if any)
-//   - pes_author        : retrieves the author name string (from pes.h)
-//   - time(NULL)        : gets the current unix timestamp
-//   - commit_serialize  : converts the filled Commit struct to a text buffer
-//   - object_write      : saves the serialized text as OBJ_COMMIT
-//   - head_update       : moves the branch pointer to your new commit
-//
-// Returns 0 on success, -1 on error.
-int commit_create(const char *message, ObjectID *commit_id_out) {
-    // TODO: Implement commit creation
-    // (See Lab Appendix for logical steps)
-    (void)message; (void)commit_id_out;
-    return -1;
+    // 1. Build tree
+    if (tree_from_index(&tree_id) != 0) {
+        return -1;
+    }
+
+    // 2. Parent commit
+    ObjectID parent_id;
+    int has_parent = (head_read(&parent_id) == 0);
+
+    // 3. Author
+    const char *author = pes_author();
+
+    // 4. Timestamp
+    time_t now = time(NULL);
+
+    // 5. Convert hashes
+    char tree_hex[HASH_HEX_SIZE + 1];
+    hash_to_hex(&tree_id, tree_hex);
+
+    char parent_hex[HASH_HEX_SIZE + 1];
+
+    // 6. Build commit content
+    char buffer[2048];
+    int offset = 0;
+
+    offset += sprintf(buffer + offset, "tree %s\n", tree_hex);
+
+    if (has_parent) {
+        hash_to_hex(&parent_id, parent_hex);
+        offset += sprintf(buffer + offset, "parent %s\n", parent_hex);
+    }
+
+    offset += sprintf(buffer + offset, "author %s %ld\n", author, now);
+    offset += sprintf(buffer + offset, "committer %s %ld\n\n", author, now);
+    offset += sprintf(buffer + offset, "%s\n", message);
+
+    // 7. Write commit object
+    if (object_write(OBJ_COMMIT, buffer, offset, out_id) != 0) {
+        return -1;
+    }
+
+    // 8. Update HEAD
+    if (head_update(out_id) != 0) {
+        return -1;
+    }
+
+    return 0;
 }
